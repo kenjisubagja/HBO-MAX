@@ -18,28 +18,25 @@ def signal_handler(sig, frame):
     sys.exit(0)
 
 def generate_cookie_json(account):
-    """Generate Cookie-Editor compatible JSON untuk 1 akun HBO."""
-    cookies = account['cookies']
+    raw_cookies = account.get('raw_cookies', [])
     result = []
-    
-    # Daftar cookie penting yang wajib dibawa
-    important_cookies = [
-        'st', 'session', 'wbd-profile-context', 
-        'countryCode', 'usr_country', 'usr_state', 
-        'one', 'transientID', 'usprivacy'
-    ]
-    
-    for name in important_cookies:
-        if cookies.get(name):
-            result.append({
-                "domain": ".hbomax.com",
-                "name": name,
-                "path": "/",
-                "secure": True,
-                "httpOnly": True,
-                "sameSite": "Lax",
-                "value": cookies[name]
-            })
+    for c in raw_cookies:
+        exp = c.get('expires', 0)
+        if exp <= 0:
+            exp = 2147483647 
+            
+        result.append({
+            "domain": c['domain'],
+            "expirationDate": exp,
+            "hostOnly": not c['domain'].startswith('.'),
+            "httpOnly": c['httpOnly'],
+            "name": c['name'],
+            "path": c['path'],
+            "sameSite": "unspecified",
+            "secure": c['secure'],
+            "session": False,
+            "value": c['value']
+        })
     return result
 
 def save_results():
@@ -79,7 +76,7 @@ print(r"""
 ██║  ██║██████╔╝╚██████╔╝    ██║ ╚═╝ ██║██║  ██║██╔╝ ██╗
 ╚═╝  ╚═╝╚═════╝  ╚═════╝     ╚═╝     ╚═╝╚═╝  ╚═╝╚═╝  ╚═╝
 
-            HBO Max Checker V4
+            HBO Max Checker
             By     : Kenjisubagja / Klikajar
             Github : kenjisubagja
             FB     : R Panji Subagja
@@ -114,6 +111,7 @@ def parse_netscape_file(filepath, folder_name):
     cookies = {}
     metadata = {}
     email = 'Unknown'
+    raw_cookies = []
 
     try:
         with open(filepath, 'r', encoding='utf-8', errors='ignore') as f:
@@ -121,8 +119,10 @@ def parse_netscape_file(filepath, folder_name):
                 line = line.strip()
                 if not line: continue
                 
+                is_http_only = False
                 if line.startswith('#HttpOnly_'):
                     line = line.replace('#HttpOnly_', '', 1)
+                    is_http_only = True
                     
                 if line.startswith('#'):
                     match = re.match(r'#([A-Z_ ]+)\s*:\s*(.+)', line)
@@ -136,9 +136,29 @@ def parse_netscape_file(filepath, folder_name):
 
                 parts = line.split('\t')
                 if len(parts) >= 7:
+                    domain = parts[0].strip()
+                    path = parts[2].strip()
+                    secure = parts[3].strip().upper() == 'TRUE'
+                    expires_str = parts[4].strip()
                     name = parts[5].strip()
                     value = parts[6].strip()
+                    
                     cookies[name] = value
+                    
+                    try:
+                        expires = int(expires_str)
+                    except:
+                        expires = 0
+                        
+                    raw_cookies.append({
+                        'domain': domain,
+                        'path': path,
+                        'secure': secure,
+                        'expires': expires,
+                        'name': name,
+                        'value': value,
+                        'httpOnly': is_http_only
+                    })
                     
     except Exception:
         return None
@@ -147,6 +167,7 @@ def parse_netscape_file(filepath, folder_name):
         'email': email,
         'plan': metadata.get('PLAN', 'Unknown'),
         'cookies': cookies,
+        'raw_cookies': raw_cookies,
         'folder_name': folder_name
     }
 
@@ -207,7 +228,7 @@ def check_hbo_account(account_data):
         else:
             return False, f"HTTP {r.status_code}"
             
-    except Exception as e:
+    except Exception:
         return False, "Network Error"
 
 def read_accounts_from_folders():
