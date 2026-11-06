@@ -1,6 +1,7 @@
 # 📺 HBO Max Checker
 
-Script Python untuk mengecek validitas (Live/Dead) akun HBO Max secara massal. Script ini membaca file cookie berformat **Netscape HTTP Cookie File**, mendeteksi region secara otomatis, dan menembak API internal HBO Max untuk mengambil nama profil.
+<img width="526" height="250" alt="image" src="https://github.com/user-attachments/assets/620f9783-62c3-44a7-9b47-694f17e7a1ab" />
+
 
 
 ## 📋 Prasyarat
